@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from dotenv import load_dotenv
-from datetime import datetime
 import os
 
 load_dotenv()
@@ -22,8 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-def generate():
-    yield "FASTAPI_TEST_123"
 
 @app.get("/")
 def home():
@@ -32,54 +29,50 @@ def home():
         "message": "Backend running"
     }
 
-
+# Existing endpoint (keep this)
 @app.post("/chat")
 def chat(data: dict):
 
-    user_messages = data.get("messages", [])
+    messages = data.get("messages", [])
 
-    messages = [
-        {
-            "role": "system",
-            "content": f"""
-You are a helpful AI assistant.
+    response = client.chat.completions.create(
+        model="google/gemini-2.5-flash",
+        messages=messages,
+        max_tokens=500
+    )
 
-Today's date is {datetime.now().strftime('%B %d, %Y')}.
-
-If asked about today's date, use the date above.
-"""
+    return {
+        "success": True,
+        "message": {
+            "role": "assistant",
+            "content": response.choices[0].message.content
         }
-    ] + user_messages
+    }
 
-    try:
-
-        response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
-            messages=messages,
-            max_tokens=500
-        )
-
-        return {
-            "success": True,
-            "model": response.model,
-            "message": {
-                "role": "assistant",
-                "content": response.choices[0].message.content
-            }
-        }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
+# New streaming endpoint
 @app.post("/chat-stream")
 def chat_stream(data: dict):
 
+    messages = data.get("messages", [])
+
     def generate():
-        yield "FASTAPI_TEST_123"
+
+        stream = client.chat.completions.create(
+            model="google/gemini-2.5-flash",
+            messages=messages,
+            max_tokens=500,
+            stream=True
+        )
+
+        for chunk in stream:
+
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+
+            if delta and delta.content:
+                yield delta.content
 
     return StreamingResponse(
         generate(),

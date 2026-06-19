@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 
 load_dotenv()
@@ -22,22 +23,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
+def get_system_message():
+    today = datetime.now().strftime("%A, %B %d, %Y")
     return {
-        "success": True,
-        "message": "Backend running"
+        "role": "system",
+        "content": f"You are a helpful assistant. Today's date is {today}."
     }
 
-# Existing endpoint (keep this)
+@app.get("/")
+def home():
+    return {"success": True, "message": "Backend running"}
+
 @app.post("/chat")
 def chat(data: dict):
-
     messages = data.get("messages", [])
+
+    # Prepend system message with today's date
+    messages_with_system = [get_system_message()] + messages
 
     response = client.chat.completions.create(
         model="google/gemini-2.5-flash",
-        messages=messages,
+        messages=messages_with_system,
         max_tokens=500
     )
 
@@ -49,32 +55,26 @@ def chat(data: dict):
         }
     }
 
-# New streaming endpoint
 @app.post("/chat-stream")
 def chat_stream(data: dict):
-
     messages = data.get("messages", [])
 
-    def generate():
+    # Prepend system message with today's date
+    messages_with_system = [get_system_message()] + messages
 
+    def generate():
         stream = client.chat.completions.create(
             model="google/gemini-2.5-flash",
-            messages=messages,
+            messages=messages_with_system,
             max_tokens=500,
             stream=True
         )
 
         for chunk in stream:
-
             if not chunk.choices:
                 continue
-
             delta = chunk.choices[0].delta
-
             if delta and delta.content:
                 yield delta.content
 
-    return StreamingResponse(
-        generate(),
-        media_type="text/plain"
-    )
+    return StreamingResponse(generate(), media_type="text/plain")
